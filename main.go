@@ -9,20 +9,21 @@ import (
 	"sync"
 	"time"
 
-	"contrib.go.opencensus.io/exporter/stackdriver"
 	"contrib.go.opencensus.io/exporter/prometheus"
+	"contrib.go.opencensus.io/exporter/stackdriver"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/trace"
 
 	"cloud.google.com/go/storage"
+	"contrib.go.opencensus.io/exporter/jaeger"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
-	"contrib.go.opencensus.io/exporter/jaeger"
 
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
+
 	//"go.opencensus.io/zpages"
 	//"contrib.go.opencensus.io/exporter/stackdriver/propagation"
 	"go.opencensus.io/plugin/ochttp"
@@ -37,11 +38,10 @@ var (
 		Description: "The distribution of latencies",
 		// https://github.com/census-ecosystem/opencensus-go-exporter-stackdriver/issues/98
 		//Aggregation: view.Distribution(0, 25, 50, 100, 250, 500, 1000, 2500, 5000),
-		Aggregation: view.Distribution(25, 50, 100, 250, 500, 1000, 2500, 5000),		
+		Aggregation: view.Distribution(25, 50, 100, 250, 500, 1000, 2500, 5000),
 		TagKeys:     []tag.Key{keyMethod},
 	}
 )
-
 
 func printInfo(resp http.ResponseWriter, req *http.Request) {
 	for _, e := range os.Environ() {
@@ -99,7 +99,7 @@ func backend(resp http.ResponseWriter, req *http.Request) {
 		http.Error(resp, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 
-	bkt := storeageCient.Bucket(os.Getenv("GOOGLE_CLOUD_PROJECT"))			
+	bkt := storeageCient.Bucket(os.Getenv("GOOGLE_CLOUD_PROJECT"))
 	obj := bkt.Object("some_file.txt")
 
 	//r, err := obj.NewReader(context.Background())
@@ -109,11 +109,11 @@ func backend(resp http.ResponseWriter, req *http.Request) {
 		http.Error(resp, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 	defer r.Close()
-	
+
 	// End GCS API call
-	
+
 	// Start Span
-	_, fileSpan := trace.StartSpan(ctx, "start=print_file")	
+	_, fileSpan := trace.StartSpan(ctx, "start=print_file")
 	if _, err := io.Copy(os.Stdout, r); err != nil {
 		log.Printf("Unable to print file contentt: %v", err)
 		http.Error(resp, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -131,7 +131,7 @@ func enforceOCTraceHandler(next http.Handler) http.Handler {
 		startTime := time.Now()
 		defer func() {
 			ms := float64(time.Since(startTime).Nanoseconds()) / 1e6
-			ctx, err := tag.New(context.Background(), tag.Insert(keyMethod, "recordVisit"))		
+			ctx, err := tag.New(context.Background(), tag.Insert(keyMethod, "recordVisit"))
 			if err != nil {
 				log.Println(err)
 			}
@@ -139,7 +139,7 @@ func enforceOCTraceHandler(next http.Handler) http.Handler {
 			stats.Record(ctx, mLatencyMs.M(ms))
 		}()
 		next.ServeHTTP(w, r)
-	  })
+	})
 }
 
 func main() {
@@ -149,8 +149,8 @@ func main() {
 	// Set exporters for tracing to both jaeger and stackdriver
 	jaegerURL := "http://localhost:14268"
 	je, err := jaeger.NewExporter(jaeger.Options{
-		Endpoint:    jaegerURL,
-		ServiceName: "jaeger-gcs",
+		CollectorEndpoint: jaegerURL,
+		ServiceName:       "jaeger-gcs",
 	})
 	defer je.Flush()
 	if err != nil {
@@ -171,7 +171,6 @@ func main() {
 	trace.RegisterExporter(je)
 	trace.RegisterExporter(sd)
 
-
 	// Set exporters for metrics to both promethus and stackdriver
 	if err := view.Register(latencyView); err != nil {
 		log.Fatal(err)
@@ -181,7 +180,7 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalf("Failed to create Prometheus exporter: %v", err)
-	}	
+	}
 	view.RegisterExporter(sd)
 	view.RegisterExporter(pe)
 	view.SetReportingPeriod(60 * time.Second)
