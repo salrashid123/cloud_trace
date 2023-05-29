@@ -11,6 +11,7 @@ import (
 
 	"contrib.go.opencensus.io/exporter/prometheus"
 	"contrib.go.opencensus.io/exporter/stackdriver"
+	"go.opencensus.io/examples/exporter"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/trace"
 
@@ -147,9 +148,11 @@ func main() {
 	var wg sync.WaitGroup
 
 	// Set exporters for tracing to both jaeger and stackdriver
-	jaegerURL := "http://localhost:14268"
+	agentEndpointURI := "localhost:6831"
+	collectorEndpointURI := "http://localhost:14268/api/traces"
 	je, err := jaeger.NewExporter(jaeger.Options{
-		CollectorEndpoint: jaegerURL,
+		AgentEndpoint:     agentEndpointURI,
+		CollectorEndpoint: collectorEndpointURI,
 		ServiceName:       "jaeger-gcs",
 	})
 	defer je.Flush()
@@ -168,8 +171,16 @@ func main() {
 		DefaultSampler: trace.AlwaysSample(),
 	})
 
+	fe, err := exporter.NewLogExporter(exporter.Options{
+		MetricsLogFile: "/tmp/metric.log",
+		TracesLogFile:  "/tmp/traces.log",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
 	trace.RegisterExporter(je)
 	trace.RegisterExporter(sd)
+	trace.RegisterExporter(fe)
 
 	// Set exporters for metrics to both promethus and stackdriver
 	if err := view.Register(latencyView); err != nil {
